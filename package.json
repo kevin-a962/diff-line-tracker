@@ -8,7 +8,9 @@
     "diff-line-tracker": "dist/cli.js"
   },
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "pretest": "npm run build",
+    "test": "node --test dist"
   },
   "engines": {
     "node": ">=18"

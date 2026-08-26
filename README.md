@@ -76,4 +76,7 @@ entry.
 
 Early. Handles single- and multi-file unified diffs with standard `---`/
 `+++`/`@@` headers (including git's `a/`/`b/` path prefixes and `/dev/null`
-for added/removed files). No test suite yet - see the roadmap.
+for added/removed files).
+
+Run `npm test` to build and run the test suite (`node --test` against the
+compiled output in `dist`).
