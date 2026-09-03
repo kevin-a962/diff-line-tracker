@@ -16,13 +16,18 @@ did this line go".
 ## Usage
 
 ```
-diff-line-tracker --file <path> --line <n> [--side old|new] [diff-file]
+diff-line-tracker --file <path> --line <n> [--side old|new] [--context <n>] [diff-file]
 ```
 
 The diff is read from `<diff-file>` if given, otherwise from stdin. `--side`
 says which side of the diff `<n>` belongs to (default `old`, meaning "before
 the patch"). `<path>` is matched against the file paths recorded in the
 diff's `---`/`+++` headers, with any `a/` or `b/` prefix stripped.
+
+`--context <n>` prints `n` lines before and after the target line, pulled
+from whichever hunk contains it. This only works for lines inside a hunk -
+a unified diff never records the text of unchanged lines far from a
+change, so there's nothing to show for those.
 
 ### From stdin
 
@@ -51,6 +56,21 @@ src/app.ts:60 (old) -> was deleted
 $ git diff | diff-line-tracker --file src/app.ts --line 46 --side new
 src/app.ts:46 (new) -> did not exist before this diff
 ```
+
+### With surrounding context
+
+```
+$ git diff | diff-line-tracker --file src/app.ts --line 42 --context 2
+src/app.ts:42 (old) -> src/app.ts:45 (new) [unchanged]
+      40 |   const id = req.params.id;
+      41 |   if (!record) {
+>     42 |     return notFound();
+      43 |   }
+      44 | }
+```
+
+The `>` marks the requested line; `+`/`-` in that column (instead of a
+blank) mean the line was only present on one side of the hunk.
 
 ## How it works
 

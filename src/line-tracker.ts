@@ -82,3 +82,42 @@ function traceNewToOld(hunks: Hunk[], lineNumber: number): TraceResult {
 export function traceLine(file: FileDiff, lineNumber: number, side: Side): TraceResult {
   return side === 'old' ? traceOldToNew(file.hunks, lineNumber) : traceNewToOld(file.hunks, lineNumber);
 }
+
+export interface ContextLine {
+  line: number;
+  text: string;
+  marker: '+' | '-' | ' ';
+}
+
+function markerFor(type: LineChange['type']): ContextLine['marker'] {
+  return type === 'add' ? '+' : type === 'remove' ? '-' : ' ';
+}
+
+// Returns up to `radius` lines before and after `lineNumber` (on `side`), as
+// recorded in whichever hunk contains that line. A unified diff only carries
+// text for lines inside hunks - anything further out was never written down
+// by the diff producer - so there's nothing to return once the line falls
+// outside every hunk's range, hence the null.
+export function getContextLines(hunks: Hunk[], lineNumber: number, side: Side, radius: number): ContextLine[] | null {
+  for (const hunk of hunks) {
+    const start = side === 'old' ? hunk.oldStart : hunk.newStart;
+    const count = side === 'old' ? hunk.oldLines : hunk.newLines;
+    const end = start + count - 1;
+    if (lineNumber < start || lineNumber > end) continue;
+
+    const result: ContextLine[] = [];
+    let oldCursor = hunk.oldStart;
+    let newCursor = hunk.newStart;
+    for (const change of hunk.changes) {
+      const visible = side === 'old' ? change.type !== 'add' : change.type !== 'remove';
+      const cursor = side === 'old' ? oldCursor : newCursor;
+      if (visible && Math.abs(cursor - lineNumber) <= radius) {
+        result.push({ line: cursor, text: change.text, marker: markerFor(change.type) });
+      }
+      if (change.type !== 'add') oldCursor++;
+      if (change.type !== 'remove') newCursor++;
+    }
+    return result;
+  }
+  return null;
+}

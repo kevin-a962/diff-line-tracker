@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseUnifiedDiff } from './diff-parser.js';
-import { traceLine } from './line-tracker.js';
+import { traceLine, getContextLines } from './line-tracker.js';
 
 // @@ -10,3 +10,4 @@
 //  context1
@@ -112,4 +112,32 @@ const [MULTI_FILE_A, MULTI_FILE_B] = parseUnifiedDiff(`--- a/one.ts
 test('tracing is independent per file in a multi-file diff', () => {
   assert.deepEqual(traceLine(MULTI_FILE_A, 1, 'old'), { status: 'deleted', line: null });
   assert.deepEqual(traceLine(MULTI_FILE_B, 6, 'old'), { status: 'unchanged', line: 8 });
+});
+
+test('context lines around an old-side line include neighboring context and the removal', () => {
+  assert.deepEqual(getContextLines(SINGLE_HUNK.hunks, 11, 'old', 1), [
+    { line: 10, text: 'context1', marker: ' ' },
+    { line: 11, text: 'removed1', marker: '-' },
+    { line: 12, text: 'context2', marker: ' ' },
+  ]);
+});
+
+test('context lines around a new-side line include neighboring context and the additions', () => {
+  assert.deepEqual(getContextLines(SINGLE_HUNK.hunks, 11, 'new', 1), [
+    { line: 10, text: 'context1', marker: ' ' },
+    { line: 11, text: 'added1', marker: '+' },
+    { line: 12, text: 'added2', marker: '+' },
+  ]);
+});
+
+test('a radius of 0 returns only the requested line', () => {
+  assert.deepEqual(getContextLines(SINGLE_HUNK.hunks, 11, 'old', 0), [{ line: 11, text: 'removed1', marker: '-' }]);
+});
+
+test('context is unavailable for a line outside every hunk', () => {
+  assert.equal(getContextLines(SINGLE_HUNK.hunks, 9, 'old', 2), null);
+});
+
+test('context lookup uses the hunk containing the line, not the first hunk', () => {
+  assert.deepEqual(getContextLines(TWO_HUNKS.hunks, 20, 'old', 0), [{ line: 20, text: 'removedA', marker: '-' }]);
 });
