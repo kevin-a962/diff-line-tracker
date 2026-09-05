@@ -16,7 +16,7 @@ did this line go".
 ## Usage
 
 ```
-diff-line-tracker --file <path> --line <n> [--side old|new] [--context <n>] [diff-file]
+diff-line-tracker --file <path> --line <n> [--side old|new] [--context <n>] [--format text|json] [diff-file]
 ```
 
 The diff is read from `<diff-file>` if given, otherwise from stdin. `--side`
@@ -28,6 +28,17 @@ diff's `---`/`+++` headers, with any `a/` or `b/` prefix stripped.
 from whichever hunk contains it. This only works for lines inside a hunk -
 a unified diff never records the text of unchanged lines far from a
 change, so there's nothing to show for those.
+
+`--format json` prints a single JSON object instead of the text lines below,
+for scripting:
+
+```
+$ git diff | diff-line-tracker --file src/app.ts --line 42 --format json
+{"file":"src/app.ts","line":42,"side":"old","status":"unchanged","result":{"file":"src/app.ts","line":45,"side":"new"},"context":null}
+```
+
+`result` is `null` when the line was added or deleted. `context` is `null`
+unless `--context` was also given.
 
 ### From stdin
 

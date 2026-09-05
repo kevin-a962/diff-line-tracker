@@ -3,9 +3,9 @@ import { readFileSync } from 'node:fs';
 import { parseUnifiedDiff } from './diff-parser.js';
 import type { FileDiff } from './diff-parser.js';
 import { traceLine, getContextLines } from './line-tracker.js';
-import type { Side } from './line-tracker.js';
+import type { Side, ContextLine, TraceResult } from './line-tracker.js';
 
-const USAGE = `Usage: diff-line-tracker --file <path> --line <n> [--side old|new] [--context <n>] [diff-file]
+const USAGE = `Usage: diff-line-tracker --file <path> --line <n> [--side old|new] [--context <n>] [--format text|json] [diff-file]
 
 Reads a unified diff from <diff-file>, or from stdin if it's omitted, and
 reports where the given line ends up on the other side of the diff.
@@ -13,11 +13,14 @@ reports where the given line ends up on the other side of the diff.
 --side selects which side <n> refers to (default: old).
 --context prints <n> lines before and after the target line, as recorded in
 the enclosing hunk (unavailable if the line falls outside every hunk).
+--format selects the output format (default: text). "json" prints a single
+JSON object to stdout instead of the human-readable lines.
 
 Examples:
   git diff | diff-line-tracker --file src/app.ts --line 42
   diff-line-tracker --file src/app.ts --line 108 --side new patch.diff
   git diff | diff-line-tracker --file src/app.ts --line 42 --context 2
+  git diff | diff-line-tracker --file src/app.ts --line 42 --format json
 `;
 
 function fail(message: string): never {
@@ -25,11 +28,14 @@ function fail(message: string): never {
   process.exit(1);
 }
 
+type Format = 'text' | 'json';
+
 interface Args {
   file: string;
   line: number;
   side: Side;
   context: number;
+  format: Format;
   diffPath: string | null;
 }
 
@@ -38,6 +44,7 @@ function parseArgs(argv: string[]): Args {
   let line: number | null = null;
   let side: Side = 'old';
   let context = 0;
+  let format: Format = 'text';
   let diffPath: string | null = null;
 
   for (let i = 0; i < argv.length; i++) {
@@ -58,6 +65,10 @@ function parseArgs(argv: string[]): Args {
       const raw = argv[++i];
       context = raw === undefined ? NaN : Number(raw);
       if (!Number.isInteger(context) || context < 0) fail(`--context must be a non-negative integer, got ${JSON.stringify(raw)}`);
+    } else if (arg === '--format') {
+      const raw = argv[++i];
+      if (raw !== 'text' && raw !== 'json') fail(`--format must be "text" or "json", got ${JSON.stringify(raw)}`);
+      format = raw;
     } else if (!arg.startsWith('--')) {
       diffPath = arg;
     } else {
@@ -68,7 +79,7 @@ function parseArgs(argv: string[]): Args {
   if (!file) fail('--file is required');
   if (line === null || !Number.isInteger(line) || line < 1) fail('--line must be a positive integer');
 
-  return { file, line, side, context, diffPath };
+  return { file, line, side, context, format, diffPath };
 }
 
 function readDiffSource(diffPath: string | null): string {
@@ -81,8 +92,7 @@ function findFile(files: FileDiff[], target: string): FileDiff | undefined {
   return files.find((f) => f.oldPath === target || f.newPath === target);
 }
 
-function printContext(match: FileDiff, line: number, side: Side, context: number): void {
-  const lines = getContextLines(match.hunks, line, side, context);
+function printContextText(lines: ContextLine[] | null, line: number): void {
   if (lines === null) {
     console.log(`  (no context available - line ${line} falls outside every hunk)`);
     return;
@@ -93,8 +103,26 @@ function printContext(match: FileDiff, line: number, side: Side, context: number
   }
 }
 
+function printText(file: string, line: number, side: Side, otherSide: Side, result: TraceResult): void {
+  if (result.line === null) {
+    const verb = result.status === 'deleted' ? 'was deleted' : 'did not exist before this diff';
+    console.log(`${file}:${line} (${side}) -> ${verb}`);
+  } else {
+    console.log(`${file}:${line} (${side}) -> ${file}:${result.line} (${otherSide}) [${result.status}]`);
+  }
+}
+
+interface JsonOutput {
+  file: string;
+  line: number;
+  side: Side;
+  status: TraceResult['status'];
+  result: { file: string; line: number; side: Side } | null;
+  context: ContextLine[] | null;
+}
+
 function main(): void {
-  const { file, line, side, context, diffPath } = parseArgs(process.argv.slice(2));
+  const { file, line, side, context, format, diffPath } = parseArgs(process.argv.slice(2));
   const diffText = readDiffSource(diffPath);
   const files = parseUnifiedDiff(diffText);
   const match = findFile(files, file);
@@ -106,16 +134,24 @@ function main(): void {
 
   const result = traceLine(match, line, side);
   const otherSide: Side = side === 'old' ? 'new' : 'old';
+  const contextLines = context > 0 ? getContextLines(match.hunks, line, side, context) : null;
 
-  if (result.line === null) {
-    const verb = result.status === 'deleted' ? 'was deleted' : 'did not exist before this diff';
-    console.log(`${file}:${line} (${side}) -> ${verb}`);
-  } else {
-    console.log(`${file}:${line} (${side}) -> ${file}:${result.line} (${otherSide}) [${result.status}]`);
+  if (format === 'json') {
+    const output: JsonOutput = {
+      file,
+      line,
+      side,
+      status: result.status,
+      result: result.line === null ? null : { file, line: result.line, side: otherSide },
+      context: contextLines,
+    };
+    console.log(JSON.stringify(output));
+    return;
   }
 
+  printText(file, line, side, otherSide, result);
   if (context > 0) {
-    printContext(match, line, side, context);
+    printContextText(contextLines, line);
   }
 }
 
